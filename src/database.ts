@@ -1,3 +1,4 @@
+
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { exec } from 'child_process';
 import fs from 'fs';
@@ -5,14 +6,12 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { promisify } from 'util';
 import cron from 'node-cron';
-
-// Load environment variables
-dotenv.config();
+import { uploadToS3 } from './s3';
 
 const execPromise = promisify(exec);
 
 // Run pg_dump to create a backup
-const createBackup = async (databaseUrl: string) => {
+ const createDatabaseBackup = async (databaseUrl: string) => {
   // Extract database name from URL for naming the file
   const dbName = databaseUrl.split('/').pop() || 'database';
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -62,50 +61,9 @@ const createBackup = async (databaseUrl: string) => {
   }
 };
 
-// Upload backup to S3
-const uploadToS3 = async (filePath: string, filename: string) => {
-  const s3Client = new S3Client({
-    region: process.env.AWS_S3_REGION,
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-    },
-  });
-
-  const fileContent = fs.readFileSync(filePath);
-  
-  console.log(`Uploading backup to S3 bucket ${process.env.AWS_S3_BUCKET}...`);
-  
-  try {
-    const command = new PutObjectCommand({
-      Bucket: process.env.AWS_S3_BUCKET!,
-      Key: filename,
-      Body: fileContent,
-      ContentType: 'application/octet-stream',
-    });
-    
-    await s3Client.send(command);
-    console.log(`Backup uploaded to S3: ${filename}`);
-  } catch (error) {
-    console.error('Error uploading to S3:', error);
-    throw error;
-  }
-};
-
-// Schedule backup using cron
-const scheduleBackup = (cronExpression: string) => {
-  console.log(`Scheduling backups with cron pattern: ${cronExpression}`);
-  
-  cron.schedule(cronExpression, () => {
-    console.log(`Executing scheduled backup at ${new Date().toISOString()}`);
-    performBackup();
-  });
-  
-  console.log('Backup scheduler is running...');
-};
 
 // Main function to execute the backup process
-const performBackup = async () => {
+export const performDatabaseBackup = async () => {
   try {
     if (!process.env.BACKUP_DATABASE_URL) {
       throw new Error('BACKUP_DATABASE_URL environment variable is not set');
@@ -113,7 +71,7 @@ const performBackup = async () => {
     
     console.log('Starting database backup process');
     
-    const { filePath, filename } = await createBackup(process.env.BACKUP_DATABASE_URL);
+    const { filePath, filename } = await createDatabaseBackup(process.env.BACKUP_DATABASE_URL);
     await uploadToS3(filePath, filename);
     
     console.log('Backup process completed successfully');
@@ -127,30 +85,3 @@ const performBackup = async () => {
     process.exit(1);
   }
 };
-
-const initialize = () => {
-  if (!process.env.BACKUP_DATABASE_URL) {
-    console.error('BACKUP_DATABASE_URL environment variable is not set');
-    process.exit(1);
-  }
-  
-  const cronInterval = process.env.CRON_JOB_INTERVAL;
-
-  if (cronInterval && cronInterval.trim() !== '') {
-    try {
-      scheduleBackup(cronInterval);
-    } catch (error) {
-      console.error('Invalid CRON_JOB_INTERVAL format:', error);
-    }
-  }
-
-  if (process.env.RUN_ON_STARTUP === 'true') {
-    performBackup();
-  }
-};
-
-initialize();
-
-
-// Export the functions for use in other scripts
-export { performBackup, scheduleBackup, initialize };
