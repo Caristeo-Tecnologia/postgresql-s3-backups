@@ -15,7 +15,8 @@ export const performFilesBackup = async () => {
     const fileUrl = process.env.FILES_BACKUP_URL;
 
     if (!fileUrl) {
-      throw new Error('FILES_BACKUP_URL is not set in environment variables.');
+      console.log('FILES_BACKUP_URL is not set in environment variables, files backup skipped.');
+      return;
     }
 
     const backupDir = path.resolve(__dirname, '../backups');
