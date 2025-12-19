@@ -10,6 +10,7 @@
   "author": "Faraz Patankar",
   "license": "MIT",
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/node": "^18.0.0",
     "@types/node-cron": "^3.0.7",
     "ts-node": "^10.9.1",
@@ -17,6 +18,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
+    "adm-zip": "^0.5.16",
     "axios": "^1.9.0",
     "dotenv": "^16.0.0",
     "node-cron": "^3.0.2"

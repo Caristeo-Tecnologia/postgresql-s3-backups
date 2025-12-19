@@ -5,8 +5,9 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { promisify } from 'util';
 import cron from 'node-cron';
-import { uploadToS3 } from './s3';
+import { listFilesInFolder, uploadFileToFolder } from './s3';
 import axios from 'axios';
+import AdmZip from 'adm-zip';
 
 dotenv.config();
 
@@ -25,12 +26,14 @@ export const performFilesBackup = async () => {
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `files-backup-${timestamp}.zip`;
-    const filePath = path.join(backupDir, filename);
+    const zipFilename = `files-backup-${timestamp}.zip`;
+    const zipFilePath = path.join(backupDir, zipFilename);
+    const extractDir = path.join(backupDir, `extracted-${timestamp}`);
 
+    console.log('Downloading files backup ZIP...');
     // Download the ZIP file
     const response = await axios.get(fileUrl, { responseType: 'stream' });
-    const writer = fs.createWriteStream(filePath);
+    const writer = fs.createWriteStream(zipFilePath);
 
     await new Promise((resolve, reject) => {
       response.data.pipe(writer);
@@ -38,13 +41,65 @@ export const performFilesBackup = async () => {
       writer.on('error', reject);
     });
 
-    // Upload to S3
-    await uploadToS3(filePath, filename);
+    console.log('ZIP downloaded. Extracting files...');
+    
+    // Extract the ZIP file
+    const zip = new AdmZip(zipFilePath);
+    zip.extractAllTo(extractDir, true);
 
-    // Optionally, remove the local file after upload
-    fs.unlinkSync(filePath);
+    // Get list of existing files in S3/R2
+    const folderPrefix = 'files-backup/';
+    console.log('Checking existing files in bucket...');
+    const existingFiles = await listFilesInFolder(folderPrefix);
 
-    console.log('Files backup completed successfully.');
+    // Get all files from extracted directory recursively
+    const getAllFiles = (dirPath: string, arrayOfFiles: string[] = []) => {
+      const files = fs.readdirSync(dirPath);
+
+      files.forEach((file) => {
+        const filePath = path.join(dirPath, file);
+        if (fs.statSync(filePath).isDirectory()) {
+          arrayOfFiles = getAllFiles(filePath, arrayOfFiles);
+        } else {
+          arrayOfFiles.push(filePath);
+        }
+      });
+
+      return arrayOfFiles;
+    };
+
+    const allFiles = getAllFiles(extractDir);
+    console.log(`Found ${allFiles.length} files in ZIP archive.`);
+
+    // Upload only new files
+    let uploadedCount = 0;
+    let skippedCount = 0;
+
+    console.log('Uploading new files to bucket...');
+    for (const filePath of allFiles) {
+      // Get relative path from extract directory
+      const relativePath = path.relative(extractDir, filePath);
+      
+      // Normalize path separators to forward slashes for S3
+      const s3Filename = relativePath.split(path.sep).join('/');
+
+      if (existingFiles.has(s3Filename)) {
+        skippedCount++;
+        console.log(`  ⊘ Skipped (already exists): ${s3Filename}`);
+      } else {
+        await uploadFileToFolder(filePath, folderPrefix, s3Filename);
+        uploadedCount++;
+      }
+    }
+
+    // Cleanup: remove local files
+    fs.unlinkSync(zipFilePath);
+    fs.rmSync(extractDir, { recursive: true, force: true });
+
+    console.log(`\nFiles backup completed:`);
+    console.log(`  - ${uploadedCount} new files uploaded`);
+    console.log(`  - ${skippedCount} files skipped (already backed up)`);
+    console.log(`  - Total files in backup: ${existingFiles.size + uploadedCount}`);
   } catch (error) {
     console.error('Error performing files backup:', error);
     process.exit(1);

@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -61,6 +61,72 @@ export const uploadToS3 = async (filePath: string, filename: string) => {
     console.log(`Backup uploaded to ${storageProvider.toUpperCase()}: ${filename}`);
   } catch (error) {
     console.error(`Error uploading to ${storageProvider.toUpperCase()}:`, error);
+    throw error;
+  }
+};
+
+// List all files in a specific folder in the bucket
+export const listFilesInFolder = async (folderPrefix: string): Promise<Set<string>> => {
+  const s3Client = createS3Client();
+  const storageProvider = process.env.STORAGE_PROVIDER || 'aws';
+  const bucketName = storageProvider.toLowerCase() === 'r2' 
+    ? process.env.R2_BUCKET 
+    : process.env.AWS_S3_BUCKET;
+
+  const existingFiles = new Set<string>();
+  
+  try {
+    const command = new ListObjectsV2Command({
+      Bucket: bucketName!,
+      Prefix: folderPrefix,
+    });
+    
+    const response = await s3Client.send(command);
+    
+    if (response.Contents) {
+      response.Contents.forEach(item => {
+        if (item.Key) {
+          // Extract just the filename from the full key
+          const filename = item.Key.replace(folderPrefix, '');
+          if (filename) {
+            existingFiles.add(filename);
+          }
+        }
+      });
+    }
+    
+    console.log(`Found ${existingFiles.size} existing files in ${folderPrefix}`);
+  } catch (error) {
+    console.error(`Error listing files from ${storageProvider.toUpperCase()}:`, error);
+    // Return empty set on error (assume no files exist)
+  }
+  
+  return existingFiles;
+};
+
+// Upload a file to a specific folder in the bucket
+export const uploadFileToFolder = async (filePath: string, folderPrefix: string, filename: string) => {
+  const s3Client = createS3Client();
+  const storageProvider = process.env.STORAGE_PROVIDER || 'aws';
+  const bucketName = storageProvider.toLowerCase() === 'r2' 
+    ? process.env.R2_BUCKET 
+    : process.env.AWS_S3_BUCKET;
+
+  const fileContent = fs.readFileSync(filePath);
+  const s3Key = `${folderPrefix}${filename}`;
+  
+  try {
+    const command = new PutObjectCommand({
+      Bucket: bucketName!,
+      Key: s3Key,
+      Body: fileContent,
+      ContentType: 'application/octet-stream',
+    });
+    
+    await s3Client.send(command);
+    console.log(`  ✓ Uploaded: ${filename}`);
+  } catch (error) {
+    console.error(`  ✗ Error uploading ${filename}:`, error);
     throw error;
   }
 };
