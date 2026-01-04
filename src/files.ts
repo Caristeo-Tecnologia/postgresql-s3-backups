@@ -42,7 +42,7 @@ export const performFilesBackup = async () => {
     });
 
     console.log('ZIP downloaded. Extracting files...');
-    
+
     // Extract the ZIP file
     const zip = new AdmZip(zipFilePath);
     zip.extractAllTo(extractDir, true);
@@ -79,7 +79,7 @@ export const performFilesBackup = async () => {
     for (const filePath of allFiles) {
       // Get relative path from extract directory
       const relativePath = path.relative(extractDir, filePath);
-      
+
       // Normalize path separators to forward slashes for S3
       const s3Filename = relativePath.split(path.sep).join('/');
 
