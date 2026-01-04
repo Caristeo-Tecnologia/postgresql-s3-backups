@@ -1,4 +1,3 @@
-
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { exec } from 'child_process';
 import fs from 'fs';
@@ -15,8 +14,9 @@ const execPromise = promisify(exec);
   // Extract database name from URL for naming the file
   const dbName = databaseUrl.split('/').pop() || 'database';
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `backup-${dbName}-${timestamp}.sql.gz`;
-  const filePath = path.join(process.cwd(), 'backups', filename);
+  const localFilename = `backup-${dbName}-${timestamp}.sql.gz`;
+  const s3Filename = `db-backup/${localFilename}`; // S3 key with folder structure
+  const filePath = path.join(process.cwd(), 'backups', localFilename);
   
   // Create backups directory if it doesn't exist
   const backupsDir = path.join(process.cwd(), 'backups');
@@ -43,7 +43,7 @@ const execPromise = promisify(exec);
     }
     
     console.log(`Backup created at ${filePath} (${stats.size} bytes)`);
-    return { filePath, filename };
+    return { filePath, filename: s3Filename };
   } catch (error) {
     console.error('Error creating backup:', error);
     
