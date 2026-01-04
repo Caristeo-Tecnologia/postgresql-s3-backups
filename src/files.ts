@@ -14,9 +14,10 @@ dotenv.config();
 export const performFilesBackup = async () => {
   try {
     const fileUrl = process.env.FILES_BACKUP_URL;
+    const filePath = process.env.FILES_BACKUP_PATH;
 
-    if (!fileUrl) {
-      console.log('FILES_BACKUP_URL is not set in environment variables, files backup skipped.');
+    if (!fileUrl && !filePath) {
+      console.log('Neither FILES_BACKUP_URL nor FILES_BACKUP_PATH is set in environment variables, files backup skipped.');
       return;
     }
 
@@ -26,26 +27,44 @@ export const performFilesBackup = async () => {
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const zipFilename = `files-backup-${timestamp}.zip`;
-    const zipFilePath = path.join(backupDir, zipFilename);
-    const extractDir = path.join(backupDir, `extracted-${timestamp}`);
+    let extractDir: string;
+    let shouldCleanup = false;
 
-    console.log('Downloading files backup ZIP...');
-    // Download the ZIP file
-    const response = await axios.get(fileUrl, { responseType: 'stream' });
-    const writer = fs.createWriteStream(zipFilePath);
+    // Determine source directory
+    if (filePath) {
+      // Use local path directly
+      console.log(`Using local files from: ${filePath}`);
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`FILES_BACKUP_PATH does not exist: ${filePath}`);
+      }
+      extractDir = filePath;
+    } else {
+      // Download and extract from URL
+      const zipFilename = `files-backup-${timestamp}.zip`;
+      const zipFilePath = path.join(backupDir, zipFilename);
+      extractDir = path.join(backupDir, `extracted-${timestamp}`);
+      shouldCleanup = true;
 
-    await new Promise((resolve, reject) => {
-      response.data.pipe(writer);
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-    });
+      console.log('Downloading files backup ZIP...');
+      // Download the ZIP file
+      const response = await axios.get(fileUrl!, { responseType: 'stream' });
+      const writer = fs.createWriteStream(zipFilePath);
 
-    console.log('ZIP downloaded. Extracting files...');
+      await new Promise((resolve, reject) => {
+        response.data.pipe(writer);
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+      });
 
-    // Extract the ZIP file
-    const zip = new AdmZip(zipFilePath);
-    zip.extractAllTo(extractDir, true);
+      console.log('ZIP downloaded. Extracting files...');
+
+      // Extract the ZIP file
+      const zip = new AdmZip(zipFilePath);
+      zip.extractAllTo(extractDir, true);
+
+      // Cleanup ZIP file immediately after extraction
+      fs.unlinkSync(zipFilePath);
+    }
 
     // Get list of existing files in S3/R2
     const folderPrefix = 'files-backup/';
@@ -69,7 +88,7 @@ export const performFilesBackup = async () => {
     };
 
     const allFiles = getAllFiles(extractDir);
-    console.log(`Found ${allFiles.length} files in ZIP archive.`);
+    console.log(`Found ${allFiles.length} files in source directory.`);
 
     // Upload only new files
     let uploadedCount = 0;
@@ -93,8 +112,9 @@ export const performFilesBackup = async () => {
     }
 
     // Cleanup: remove local files
-    fs.unlinkSync(zipFilePath);
-    fs.rmSync(extractDir, { recursive: true, force: true });
+    if (shouldCleanup) {
+      fs.rmSync(extractDir, { recursive: true, force: true });
+    }
 
     console.log(`\nFiles backup completed:`);
     console.log(`  - ${uploadedCount} new files uploaded`);
