@@ -124,7 +124,6 @@ export const uploadFileToFolder = async (filePath: string, folderPrefix: string,
     });
     
     await s3Client.send(command);
-    console.log(`  ✓ Uploaded: ${filename}`);
   } catch (error) {
     console.error(`  ✗ Error uploading ${filename}:`, error);
     throw error;

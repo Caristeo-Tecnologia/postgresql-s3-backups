@@ -93,9 +93,14 @@ export const performFilesBackup = async () => {
     // Upload only new files
     let uploadedCount = 0;
     let skippedCount = 0;
+    const totalFiles = allFiles.length;
+    const startTime = Date.now();
 
     console.log('Uploading new files to bucket...');
-    for (const filePath of allFiles) {
+    for (let i = 0; i < allFiles.length; i++) {
+      const filePath = allFiles[i];
+      const progress = ((i + 1) / totalFiles * 100).toFixed(1);
+      
       // Get relative path from extract directory
       const relativePath = path.relative(extractDir, filePath);
 
@@ -104,8 +109,9 @@ export const performFilesBackup = async () => {
 
       if (existingFiles.has(s3Filename)) {
         skippedCount++;
-        console.log(`  ⊘ Skipped (already exists): ${s3Filename}`);
+        console.log(`  [${i + 1}/${totalFiles}] (${progress}%) ⊘ Skipped (already exists): ${s3Filename}`);
       } else {
+        console.log(`  [${i + 1}/${totalFiles}] (${progress}%) Uploading: ${s3Filename}`);
         await uploadFileToFolder(filePath, folderPrefix, s3Filename);
         uploadedCount++;
       }
@@ -116,7 +122,10 @@ export const performFilesBackup = async () => {
       fs.rmSync(extractDir, { recursive: true, force: true });
     }
 
-    console.log(`\nFiles backup completed:`);
+    const endTime = Date.now();
+    const duration = ((endTime - startTime) / 1000).toFixed(2);
+
+    console.log(`\nFiles backup completed in ${duration}s:`);
     console.log(`  - ${uploadedCount} new files uploaded`);
     console.log(`  - ${skippedCount} files skipped (already backed up)`);
     console.log(`  - Total files in backup: ${existingFiles.size + uploadedCount}`);
