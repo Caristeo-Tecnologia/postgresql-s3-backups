@@ -32,9 +32,59 @@ const createPostgreSQLBackup = async (config: DatabaseConfig): Promise<BackupRes
   console.log(`Creating PostgreSQL backup for database ${dbName}...`);
   
   try {
-    // Run pg_dump with gzip compression using the full database URL
+    // Run pg_dump with compression
     const pgDumpPath = process.env.PG_DUMP_PATH || '';
-    const { stdout, stderr } = await execPromise(`${pgDumpPath}pg_dump --dbname="${config.connectionString}" -F p | gzip > "${filePath}"`);
+    const isWindows = process.platform === 'win32';
+    const pgDumpExecutable = isWindows ? 'pg_dump.exe' : 'pg_dump';
+    const gzipExecutable = isWindows ? 'gzip.exe' : 'gzip';
+    
+    // Build the full path to executables with proper quoting
+    const pgDumpFullPath = pgDumpPath ? path.join(pgDumpPath, pgDumpExecutable) : pgDumpExecutable;
+    
+    // Build the pg_dump command with individual parameters instead of connection string
+    let command: string;
+    let env = process.env;
+    
+    if (isWindows) {
+      // Windows: Extract connection parameters for better compatibility
+      let pgPassword = '';
+      let pgHost = 'localhost';
+      let pgPort = '5432';
+      let pgUser = '';
+      let pgDatabase = '';
+      
+      try {
+        const url = new URL(config.connectionString);
+        pgPassword = url.password || '';
+        pgHost = url.hostname || 'localhost';
+        pgPort = url.port || '5432';
+        pgUser = url.username || '';
+        pgDatabase = url.pathname.substring(1); // Remove leading slash
+      } catch (error) {
+        console.error('Could not parse connection string:', error);
+        throw new Error('Invalid PostgreSQL connection string format');
+      }
+      
+      // Set PGPASSWORD environment variable for Windows
+      env = {
+        ...process.env,
+        PGPASSWORD: pgPassword,
+      };
+      
+      // Use separate parameters for better compatibility
+      const quotedPgDump = `"${pgDumpFullPath}"`;
+      const quotedFilePath = `"${filePath}"`;
+      
+      // Use individual connection parameters
+      command = `cmd /c "${quotedPgDump} -h ${pgHost} -p ${pgPort} -U ${pgUser} -d ${pgDatabase} -F p | ${gzipExecutable} > ${quotedFilePath}"`;
+    } else {
+      // Unix/Linux/macOS - can use connection string directly (password included in string)
+      const quotedPgDump = pgDumpPath ? `"${pgDumpFullPath}"` : pgDumpExecutable;
+      const quotedFilePath = `"${filePath}"`;
+      command = `${quotedPgDump} --dbname="${config.connectionString}" -F p | ${gzipExecutable} > ${quotedFilePath}`;
+    }
+    
+    const { stdout, stderr } = await execPromise(command, { env });
     
     // Check if there was any stderr output (which might indicate an error)
     if (stderr && stderr.trim() !== '') {

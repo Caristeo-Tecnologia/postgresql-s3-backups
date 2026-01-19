@@ -112,7 +112,16 @@ FILES_BACKUP_URL=https://example.com/files-backup.zip
 ```env
 # Path to pg_dump binary (include trailing slash)
 # Required for PostgreSQL backups
+
+# Linux/macOS:
 PG_DUMP_PATH=/usr/bin/
+# or
+# PG_DUMP_PATH=/opt/homebrew/bin/
+
+# Windows:
+# PG_DUMP_PATH=C:\Program Files\PostgreSQL\17\bin\
+# or leave empty if pg_dump is in system PATH
+# PG_DUMP_PATH=
 ```
 
 ### Storage Provider (AWS S3 or Cloudflare R2)
@@ -344,8 +353,17 @@ npm run build
 
 - Node.js 16+
 - PostgreSQL client tools (pg_dump) for PostgreSQL backups
+  - **Windows**: Install PostgreSQL and add `bin` directory to PATH or set `PG_DUMP_PATH`
+  - **Linux/macOS**: Install `postgresql-client` package or full PostgreSQL
+  - **Windows**: Requires gzip (included with Git for Windows or install separately)
 - Network access to MSSQL servers for MSSQL backups
 - Write permissions to `LOCAL_BACKUP_PATH` if using local storage
+
+## Platform Support
+
+✅ **Windows** - Fully supported (Windows 10/11, Windows Server)
+✅ **macOS** - Fully supported
+✅ **Linux** - Fully supported
 
 ## Notes
 
