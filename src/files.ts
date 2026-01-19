@@ -66,6 +66,76 @@ export const performFilesBackup = async () => {
       fs.unlinkSync(zipFilePath);
     }
 
+    const backupStorage = process.env.BACKUP_STORAGE || 'cloud';
+    const localBackupPath = process.env.LOCAL_BACKUP_PATH;
+
+    if (backupStorage === 'local') {
+      // Local backup mode - copy files to local directory
+      if (!localBackupPath) {
+        console.error('LOCAL_BACKUP_PATH is required when BACKUP_STORAGE=local');
+        return;
+      }
+
+      const resolvedLocalPath = path.resolve(localBackupPath, 'files-backup');
+      if (!fs.existsSync(resolvedLocalPath)) {
+        fs.mkdirSync(resolvedLocalPath, { recursive: true });
+        console.log(`Created local files backup directory: ${resolvedLocalPath}`);
+      }
+
+      // Get all files from source directory recursively
+      const getAllFiles = (dirPath: string, arrayOfFiles: string[] = []) => {
+        const files = fs.readdirSync(dirPath);
+
+        files.forEach((file) => {
+          const filePath = path.join(dirPath, file);
+          if (fs.statSync(filePath).isDirectory()) {
+            arrayOfFiles = getAllFiles(filePath, arrayOfFiles);
+          } else {
+            arrayOfFiles.push(filePath);
+          }
+        });
+
+        return arrayOfFiles;
+      };
+
+      const allFiles = getAllFiles(extractDir);
+      console.log(`Found ${allFiles.length} files in source directory.`);
+      console.log('Copying files to local backup directory...');
+
+      let copiedCount = 0;
+      const totalFiles = allFiles.length;
+
+      for (let i = 0; i < allFiles.length; i++) {
+        const sourceFile = allFiles[i];
+        const relativePath = path.relative(extractDir, sourceFile);
+        const destFile = path.join(resolvedLocalPath, relativePath);
+        const destDir = path.dirname(destFile);
+
+        // Create destination directory if it doesn't exist
+        if (!fs.existsSync(destDir)) {
+          fs.mkdirSync(destDir, { recursive: true });
+        }
+
+        // Copy file
+        fs.copyFileSync(sourceFile, destFile);
+        copiedCount++;
+
+        const progress = ((i + 1) / totalFiles * 100).toFixed(1);
+        console.log(`  [${i + 1}/${totalFiles}] (${progress}%) Copied: ${relativePath}`);
+      }
+
+      // Cleanup: remove temporary files if they were downloaded
+      if (shouldCleanup) {
+        fs.rmSync(extractDir, { recursive: true, force: true });
+      }
+
+      console.log(`\nFiles backup completed:`);
+      console.log(`  - ${copiedCount} files copied to local backup`);
+      console.log(`  - Backup location: ${resolvedLocalPath}`);
+      return;
+    }
+
+    // Cloud backup mode (S3/R2)
     // Get list of existing files in S3/R2
     const folderPrefix = 'files-backup/';
     console.log('Checking existing files in bucket...');
