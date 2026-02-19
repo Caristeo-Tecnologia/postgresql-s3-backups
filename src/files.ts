@@ -47,14 +47,54 @@ export const performFilesBackup = async () => {
 
       console.log('Downloading files backup ZIP...');
       // Download the ZIP file
-      const response = await axios.get(fileUrl!, { responseType: 'stream' });
+      const response = await axios.get(fileUrl!, { 
+        responseType: 'stream',
+        timeout: 3000000,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      });
       const writer = fs.createWriteStream(zipFilePath);
+
+      // Track download progress
+      const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+      let downloadedSize = 0;
+      const startDownloadTime = Date.now();
+      let lastLogTime = startDownloadTime;
+
+      response.data.on('data', (chunk: Buffer) => {
+        downloadedSize += chunk.length;
+        const now = Date.now();
+        
+        // Log progress every 500ms to avoid flooding console
+        if (now - lastLogTime >= 500 || downloadedSize === totalSize) {
+          const elapsed = (now - startDownloadTime) / 1000;
+          const percentage = totalSize > 0 ? ((downloadedSize / totalSize) * 100).toFixed(1) : '?';
+          const downloadedMB = (downloadedSize / (1024 * 1024)).toFixed(2);
+          const totalMB = totalSize > 0 ? (totalSize / (1024 * 1024)).toFixed(2) : '?';
+          const speedMBps = elapsed > 0 ? (downloadedSize / (1024 * 1024) / elapsed).toFixed(2) : '0.00';
+          
+          console.log(`  Downloading: ${downloadedMB}MB / ${totalMB}MB (${percentage}%) - ${speedMBps} MB/s`);
+          lastLogTime = now;
+        }
+      });
 
       await new Promise((resolve, reject) => {
         response.data.pipe(writer);
         writer.on('finish', resolve);
-        writer.on('error', reject);
+        writer.on('error', (err) => {
+          fs.unlink(zipFilePath, () => {}); // Cleanup partial file
+          reject(err);
+        });
+        response.data.on('error', (err: any) => {
+          writer.close();
+          fs.unlink(zipFilePath, () => {}); // Cleanup partial file
+          reject(err);
+        });
       });
+
+      const totalDownloadTime = ((Date.now() - startDownloadTime) / 1000).toFixed(2);
+      const finalSizeMB = (downloadedSize / (1024 * 1024)).toFixed(2);
+      console.log(`Download completed: ${finalSizeMB}MB in ${totalDownloadTime}s`);
 
       console.log('ZIP downloaded. Extracting files...');
 
