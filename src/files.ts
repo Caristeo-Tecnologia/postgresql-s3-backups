@@ -11,12 +11,19 @@ import AdmZip from 'adm-zip';
 
 dotenv.config();
 
+export interface FileInfo {
+    fileName: string
+    size: number
+    url: string
+}
+
 export const performFilesBackup = async () => {
   try {
     const fileUrl = process.env.FILES_BACKUP_URL;
     const filePath = process.env.FILES_BACKUP_PATH;
+    const listingUrl = process.env.FILES_BACKUP_LISTING_URL;
 
-    if (!fileUrl && !filePath) {
+    if (!fileUrl && !filePath && !listingUrl) {
       console.log('Neither FILES_BACKUP_URL nor FILES_BACKUP_PATH is set in environment variables, files backup skipped.');
       return;
     }
@@ -38,6 +45,92 @@ export const performFilesBackup = async () => {
         throw new Error(`FILES_BACKUP_PATH does not exist: ${filePath}`);
       }
       extractDir = filePath;
+    } else if (listingUrl) {
+      console.log('Fetching file listing...');
+      const response = await axios.get(listingUrl, { timeout: 30000 });
+      const files: FileInfo[] = response.data;
+
+      if (!Array.isArray(files)) {
+        throw new Error('Response from FILES_BACKUP_LISTING_URL must be a JSON array');
+      }
+
+      console.log(`Found ${files.length} files in listing`);
+
+      extractDir = path.join(backupDir, `temp-files-listing-${timestamp}`);
+      fs.mkdirSync(extractDir, { recursive: true });
+      shouldCleanup = true;
+
+      // Download files in parallel batches of 10
+      const MAX_CONCURRENT_DOWNLOADS = 10;
+      let downloadedCount = 0;
+      let failedCount = 0;
+      const startDownloadTime = Date.now();
+
+      console.log(`Downloading files (max ${MAX_CONCURRENT_DOWNLOADS} concurrent)...`);
+
+      for (let i = 0; i < files.length; i += MAX_CONCURRENT_DOWNLOADS) {
+        const batch = files.slice(i, i + MAX_CONCURRENT_DOWNLOADS);
+        
+        const downloadPromises = batch.map(async (file, batchIndex) => {
+          const fileIndex = i + batchIndex;
+          const progress = ((fileIndex + 1) / files.length * 100).toFixed(1);
+
+          if (!file.fileName || !file.url) {
+            console.warn(`  [${fileIndex + 1}/${files.length}] (${progress}%) ⚠ Skipping invalid file entry (missing fileName or url)`);
+            return { success: false };
+          }
+
+          try {
+            console.log(`Starting download: ${file.fileName} (${(file.size / (1024 * 1024)).toFixed(2)} MB) [${fileIndex + 1}/${files.length}] (${progress}%)`);
+            
+            const fileResponse = await axios.get(file.url, { 
+              responseType: 'stream',
+              timeout: 300000, // 5 minutes per file
+              maxContentLength: Infinity,
+              maxBodyLength: Infinity
+            });
+
+            const filePath = path.join(extractDir, file.fileName);
+            const fileDir = path.dirname(filePath);
+            
+            // Create directory if it doesn't exist (for nested paths)
+            if (!fs.existsSync(fileDir)) {
+              fs.mkdirSync(fileDir, { recursive: true });
+            }
+
+            const writer = fs.createWriteStream(filePath);
+
+            await new Promise<void>((resolve, reject) => {
+              fileResponse.data.pipe(writer);
+              writer.on('finish', () => resolve());
+              writer.on('error', (err) => {
+                fs.unlink(filePath, () => {}); // Cleanup partial file
+                reject(err);
+              });
+              fileResponse.data.on('error', (err: any) => {
+                writer.close();
+                fs.unlink(filePath, () => {}); // Cleanup partial file
+                reject(err);
+              });
+            });
+
+            console.log(`  [${fileIndex + 1}/${files.length}] (${progress}%) ✓ Downloaded: ${file.fileName} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`);
+            return { success: true };
+          } catch (error) {
+            console.error(`  [${fileIndex + 1}/${files.length}] (${progress}%) ✗ Failed: ${file.fileName}`, error instanceof Error ? error.message : error);
+            return { success: false };
+          }
+        });
+
+        const results = await Promise.all(downloadPromises);
+        downloadedCount += results.filter(r => r.success).length;
+        failedCount += results.filter(r => !r.success).length;
+      }
+
+      const totalDownloadTime = ((Date.now() - startDownloadTime) / 1000).toFixed(2);
+      console.log(`\nDownload phase completed in ${totalDownloadTime}s:`);
+      console.log(`  - ${downloadedCount} files downloaded successfully`);
+      console.log(`  - ${failedCount} files failed or skipped`);
     } else {
       // Download and extract from URL
       const zipFilename = `files-backup-${timestamp}.zip`;
