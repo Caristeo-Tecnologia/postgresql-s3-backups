@@ -304,25 +304,3 @@ export const performDatabaseBackup = async (databases: DatabaseConfig[]) => {
   }
 };
 
-// Legacy function for backward compatibility (using BACKUP_DATABASE_URL env var)
-export const performLegacyDatabaseBackup = async () => {
-  try {
-    if (!process.env.BACKUP_DATABASE_URL) {
-      console.log('BACKUP_DATABASE_URL not set, skipping legacy backup');
-      return;
-    }
-    
-    console.log('Using legacy backup configuration (BACKUP_DATABASE_URL)');
-    
-    const legacyConfig: DatabaseConfig = {
-      type: 'postgresql',
-      name: 'legacy-db',
-      connectionString: process.env.BACKUP_DATABASE_URL,
-    };
-    
-    await performDatabaseBackup([legacyConfig]);
-  } catch (error) {
-    console.error('Legacy backup process failed:', error);
-    throw error;
-  }
-};

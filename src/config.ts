@@ -29,9 +29,12 @@ export const getDatabaseConfigs = (): DatabaseConfig[] => {
   // Fallback to legacy format if no configs found
   if (configs.length === 0 && process.env.BACKUP_DATABASE_URL) {
     console.log('Using legacy BACKUP_DATABASE_URL configuration');
+
+    const dbName = process.env.BACKUP_DATABASE_URL.split('/').pop()?.split('?')[0] || 'legacy-db';
+
     configs.push({
       type: 'postgresql',
-      name: 'legacy-db',
+      name: dbName,
       connectionString: process.env.BACKUP_DATABASE_URL,
     });
   }
