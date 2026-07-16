@@ -5,7 +5,8 @@
   "main": "dist/doit.js",
   "scripts": {
     "start": "ts-node src/start.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --test --require ts-node/register tests/**/*.test.ts"
   },
   "author": "Faraz Patankar",
   "license": "MIT",

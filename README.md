@@ -33,11 +33,11 @@ CRON_JOB_INTERVAL=0 2 * * *
 Choose where to store your backups:
 
 ```env
-# Storage mode: 'cloud' (S3/R2) or 'local' (local directory)
-# Default: 'cloud'
-BACKUP_STORAGE=cloud
+# Backup destination: 'local', 'aws', or 'r2'
+# Default: 'aws'
+BACKUP_DESTINATION_TYPE=aws
 
-# If BACKUP_STORAGE=local, specify the local backup directory
+# If BACKUP_DESTINATION_TYPE=local, specify the local backup directory
 # This path will contain subdirectories: db-backup/ and files-backup/
 LOCAL_BACKUP_PATH=/path/to/backup/folder
 ```
@@ -124,16 +124,9 @@ PG_DUMP_PATH=/usr/bin/
 # PG_DUMP_PATH=
 ```
 
-### Storage Provider (AWS S3 or Cloudflare R2)
-
-```env
-# Use 'aws' for AWS S3 (default) or 'r2' for Cloudflare R2
-STORAGE_PROVIDER=aws
-```
-
 ### AWS S3 Configuration
 
-Use these variables when `STORAGE_PROVIDER=aws`:
+Use these variables when `BACKUP_DESTINATION_TYPE=aws`:
 
 ```env
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
@@ -144,7 +137,7 @@ AWS_S3_REGION=us-east-1
 
 ### Cloudflare R2 Configuration
 
-Use these variables when `STORAGE_PROVIDER=r2`:
+Use these variables when `BACKUP_DESTINATION_TYPE=r2`:
 
 ```env
 R2_ACCOUNT_ID=a1b2c3d4e5f6g7h8i9j0
@@ -166,7 +159,7 @@ CRON_JOB_INTERVAL=0 2 * * *
 PG_DUMP_PATH=/usr/bin/
 
 # Local storage configuration
-BACKUP_STORAGE=local
+BACKUP_DESTINATION_TYPE=local
 LOCAL_BACKUP_PATH=/backup/directory
 
 DATABASE_CONFIGS='[
@@ -196,8 +189,8 @@ RUN_ON_STARTUP=false
 CRON_JOB_INTERVAL=0 2 * * *
 PG_DUMP_PATH=/usr/bin/
 
-# Cloud storage configuration
-BACKUP_STORAGE=cloud
+# AWS S3 storage configuration
+BACKUP_DESTINATION_TYPE=aws
 
 DATABASE_CONFIGS='[
   {
@@ -212,7 +205,6 @@ DATABASE_CONFIGS='[
   }
 ]'
 
-STORAGE_PROVIDER=aws
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 AWS_S3_BUCKET=prod-backups
@@ -226,8 +218,8 @@ RUN_ON_STARTUP=true
 CRON_JOB_INTERVAL=0 3 * * *
 PG_DUMP_PATH=/opt/homebrew/bin/
 
-# Cloud storage configuration
-BACKUP_STORAGE=cloud
+# Cloudflare R2 storage configuration
+BACKUP_DESTINATION_TYPE=r2
 
 DATABASE_CONFIGS='[
   {
@@ -252,7 +244,6 @@ DATABASE_CONFIGS='[
 
 FILES_BACKUP_PATH=/var/www/uploads/
 
-STORAGE_PROVIDER=r2
 R2_ACCOUNT_ID=a1b2c3d4e5f6g7h8i9j0
 R2_ACCESS_KEY_ID=1234567890abcdef1234567890abcdef
 R2_SECRET_ACCESS_KEY=abcdef1234567890abcdef1234567890abcdef12
@@ -265,8 +256,8 @@ R2_BUCKET=myapp-backups
 RUN_ON_STARTUP=true
 CRON_JOB_INTERVAL=0 * * * *
 
-# Cloud storage configuration
-BACKUP_STORAGE=cloud
+# AWS S3 storage configuration
+BACKUP_DESTINATION_TYPE=aws
 
 DATABASE_CONFIGS='[
   {
@@ -289,7 +280,6 @@ DATABASE_CONFIGS='[
   }
 ]'
 
-STORAGE_PROVIDER=aws
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 AWS_S3_BUCKET=mssql-backups
@@ -304,10 +294,9 @@ CRON_JOB_INTERVAL=0 2 * * *
 BACKUP_DATABASE_URL=postgresql://myuser:mypass@db.example.com:5432/production
 PG_DUMP_PATH=/usr/bin/
 
-# Cloud storage configuration
-BACKUP_STORAGE=cloud
+# AWS S3 storage configuration
+BACKUP_DESTINATION_TYPE=aws
 
-STORAGE_PROVIDER=aws
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 AWS_S3_BUCKET=prod-backups
@@ -335,12 +324,12 @@ npm run build
 
 ## Backup Files
 
-### Cloud Storage (BACKUP_STORAGE=cloud)
-- Database backups are uploaded to the `db-backup/` folder in your S3/R2 bucket
+### Cloud Storage (BACKUP_DESTINATION_TYPE=aws or BACKUP_DESTINATION_TYPE=r2)
+- Database backups are uploaded to the `db-backup/` folder in your AWS S3 or Cloudflare R2 bucket
 - Files backups are uploaded to the `files-backup/` folder
 - Local backup files are automatically cleaned up after successful upload
 
-### Local Storage (BACKUP_STORAGE=local)
+### Local Storage (BACKUP_DESTINATION_TYPE=local)
 - Database backups are saved directly in the `LOCAL_BACKUP_PATH` directory
 - Files backups are saved in `LOCAL_BACKUP_PATH/files-backup/`
 - Local files are preserved (not deleted after backup)

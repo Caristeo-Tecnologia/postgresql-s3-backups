@@ -1,17 +1,8 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { exec } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import dotenv from 'dotenv';
-import { promisify } from 'util';
 import cron from 'node-cron';
-import { uploadToS3 } from './s3';
-import { performDatabaseBackup } from './database';
-import { performFilesBackup } from './files';
-import { getValidatedDatabaseConfigs } from './config';
-
-// Load environment variables
-dotenv.config();
+import { performDatabaseBackup } from './database/database';
+import { getValidatedDatabaseConfigs } from './utils/config';
+import { performFilesBackup } from './storage-backup/storage';
+import { getEnvironment } from './utils/environment';
 
 async function performBackups() {
   await performFilesBackup();
@@ -39,7 +30,8 @@ const scheduleBackup = (cronExpression: string) => {
 };
 
 const initialize = () => {
-  const cronInterval = process.env.CRON_JOB_INTERVAL;
+  const environment = getEnvironment();
+  const cronInterval = environment.cronJobInterval;
 
   if (cronInterval && cronInterval.trim() !== '') {
     try {
@@ -49,7 +41,7 @@ const initialize = () => {
     }
   }
 
-  if (process.env.RUN_ON_STARTUP === 'true') {
+  if (environment.runOnStartup) {
     performBackups();
   }
 };

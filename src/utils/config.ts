@@ -1,17 +1,16 @@
-import dotenv from 'dotenv';
 import { DatabaseConfig } from './types';
-
-dotenv.config();
+import { getEnvironment } from './environment';
 
 /**
  * Parse database configurations from environment variables
  * Supports both new format (DATABASE_CONFIGS JSON) and legacy format (BACKUP_DATABASE_URL)
  */
 export const getDatabaseConfigs = (): DatabaseConfig[] => {
+  const environment = getEnvironment();
   const configs: DatabaseConfig[] = [];
   
   // Try to parse new format: DATABASE_CONFIGS
-  const databaseConfigsEnv = process.env.DATABASE_CONFIGS;
+  const databaseConfigsEnv = environment.databaseConfigs;
   if (databaseConfigsEnv) {
     try {
       const parsedConfigs = JSON.parse(databaseConfigsEnv);
@@ -27,15 +26,15 @@ export const getDatabaseConfigs = (): DatabaseConfig[] => {
   }
   
   // Fallback to legacy format if no configs found
-  if (configs.length === 0 && process.env.BACKUP_DATABASE_URL) {
+  if (configs.length === 0 && environment.backupDatabaseUrl) {
     console.log('Using legacy BACKUP_DATABASE_URL configuration');
 
-    const dbName = process.env.BACKUP_DATABASE_URL.split('/').pop()?.split('?')[0] || 'legacy-db';
+    const dbName = environment.backupDatabaseUrl.split('/').pop()?.split('?')[0] || 'legacy-db';
 
     configs.push({
       type: 'postgresql',
       name: dbName,
-      connectionString: process.env.BACKUP_DATABASE_URL,
+      connectionString: environment.backupDatabaseUrl,
     });
   }
   
