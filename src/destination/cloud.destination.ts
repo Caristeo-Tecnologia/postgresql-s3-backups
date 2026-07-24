@@ -15,11 +15,11 @@ export const persistFileToCloud = async (
 ) => {
   const normalizedFileName = fileName.replace(/^\/+/, '').split(/[\\/]/).join('/');
 
+  await uploadFileToS3(sourceFilePath, folderPrefix, normalizedFileName);
+
   if (shouldCleanup) {
     fs.rmSync(sourceFilePath, { recursive: true, force: true });
   }
-
-  await uploadFileToS3(sourceFilePath, folderPrefix, normalizedFileName);
 };
 
 

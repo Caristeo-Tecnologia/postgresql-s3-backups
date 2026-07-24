@@ -2,6 +2,7 @@ import { DestinationSourceType, FolderPrefix } from "../utils/types";
 import { existisBackupedLocalFile, persistFileToLocal } from "./local.destination";
 import { existisBackupedCloudFile, persistFileToCloud } from "./cloud.destination";
 import { getEnvironment } from '../utils/environment';
+import { existsSync } from "fs";
 
 export const backupAlreadyExists = async (folderPrefix: FolderPrefix, fileName: string): Promise<boolean> => {
     const destinationType: DestinationSourceType = getEnvironment().destinationType
@@ -53,16 +54,25 @@ export const persistBackupFiles = async (
     const destinationType: DestinationSourceType = getEnvironment().destinationType
 
     for (const sourceFile of sourceFiles) {
-        if (destinationType === 'local') {
-            await persistFileToLocal(folderPrefix, sourceFile.fileName, sourceFile.sourcePath, shouldCleanup);
+        if (!existsSync(sourceFile.sourcePath)) {
+            console.warn(`Source file does not exist: ${sourceFile.sourcePath} on ${sourceFile.fileName}. Skipping.`);
+            continue;
         }
 
-        if (destinationType === 'aws') {
-            await persistFileToCloud(folderPrefix, sourceFile.fileName, sourceFile.sourcePath, shouldCleanup);
-        }
+        try {
+            if (destinationType === 'local') {
+                await persistFileToLocal(folderPrefix, sourceFile.fileName, sourceFile.sourcePath, shouldCleanup);
+            }
 
-        if (destinationType === 'r2') {
-            await persistFileToCloud(folderPrefix, sourceFile.fileName, sourceFile.sourcePath, shouldCleanup);
+            if (destinationType === 'aws') {
+                await persistFileToCloud(folderPrefix, sourceFile.fileName, sourceFile.sourcePath, shouldCleanup);
+            }
+
+            if (destinationType === 'r2') {
+                await persistFileToCloud(folderPrefix, sourceFile.fileName, sourceFile.sourcePath, shouldCleanup);
+            }
+        } catch (error) {
+            console.error(`✗ Error processing file ${sourceFile.fileName}:`, error instanceof Error ? error.message : error);
         }
     }
 };
