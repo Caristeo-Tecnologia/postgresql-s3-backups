@@ -6,6 +6,7 @@ import path from 'path';
 import { backupAlreadyExists, persistBackupFiles } from '../destination/destination';
 import { getAllFilesFromLocalDir } from '../utils/utils';
 import { getEnvironment } from '../utils/environment';
+import { throttledLog, flushThrottledLogs } from '../utils/logger';
 
 export const backupFromZipUrl = async () => {
   const fileUrl = getEnvironment().filesBackupUrl;
@@ -82,12 +83,14 @@ export const backupFromZipUrl = async () => {
     const relativePath = path.relative(extractDir, extractedFile).split(path.sep).join('/');
 
     if (await backupAlreadyExists('files-backup', relativePath)) {
-      console.log(`Skipped (already exists in backup): ${relativePath}`);
+      throttledLog('zippedfile-skip', `Skipped (already exists in backup): ${relativePath}`);
       continue;
     }
 
     filesToPersist.push({ fileName: relativePath, sourcePath: extractedFile });
   }
+
+  flushThrottledLogs();
 
   await persistBackupFiles('files-backup', filesToPersist, false);
   fs.rmSync(extractDir, { recursive: true, force: true });

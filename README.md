@@ -26,6 +26,12 @@ RUN_ON_STARTUP=true
 # - Every day at 2 AM: 0 2 * * *
 # - Every Sunday at 3 AM: 0 3 * * 0
 CRON_JOB_INTERVAL=0 2 * * *
+
+# When true, collapses very repetitive log lines (e.g. "Starting download",
+# "Skipped (already exists in backup)") into a single line per second, to
+# avoid exceeding log volume limits on cloud logging providers.
+# Default: false
+MINIMIZE_LOGS=false
 ```
 
 ### Backup Storage Configuration

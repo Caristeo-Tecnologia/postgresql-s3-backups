@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { backupAlreadyExists, persistBackupFiles } from '../destination/destination';
 import { getEnvironment } from '../utils/environment';
+import { throttledLog, flushThrottledLogs } from '../utils/logger';
 
 interface SupabaseStorageItem {
   name: string;
@@ -88,7 +89,7 @@ export const backupFromSupabaseBucket = async () => {
       const backupRelativePath = path.posix.join(bucket, relativePath);
 
       if (!backupRelativePath || await backupAlreadyExists('files-backup', backupRelativePath)) {
-        console.log(`Skipped (already exists in backup): ${backupRelativePath}`);
+        throttledLog('supabase-skip', `Skipped (already exists in backup): ${backupRelativePath}`);
         continue;
       }
 
@@ -105,6 +106,8 @@ export const backupFromSupabaseBucket = async () => {
       downloadedFiles.push({ fileName: backupRelativePath, sourcePath: localFilePath });
     }
   }
+
+  flushThrottledLogs();
 
   await persistBackupFiles('files-backup', downloadedFiles, false);
   fs.rmSync(tempDir, { recursive: true, force: true });

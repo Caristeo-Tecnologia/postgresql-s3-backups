@@ -4,6 +4,7 @@ import path from "path";
 import { FileInfo } from "../utils/types";
 import { backupAlreadyExists, persistBackupFiles } from "../destination/destination";
 import { getEnvironment } from '../utils/environment';
+import { throttledLog, flushThrottledLogs } from '../utils/logger';
 
 export const backupFromListingUrl = async () => {
   const listingUrl = getEnvironment().filesBackupListingUrl;
@@ -52,12 +53,12 @@ export const backupFromListingUrl = async () => {
       const destinationExists = await backupAlreadyExists("files-backup", normalizedFileName);
 
       if (destinationExists) {
-        console.log(`  [${fileIndex + 1}/${files.length}] (${progress}%) ⊘ Skipped (already exists in backup): ${normalizedFileName}`);
+        throttledLog('listingurl-skip', `  [${fileIndex + 1}/${files.length}] (${progress}%) ⊘ Skipped (already exists in backup): ${normalizedFileName}`);
         return { status: 'skipped' as const };
       }
 
       try {
-        console.log(`Starting download: ${file.fileName} (${(file.size / (1024 * 1024)).toFixed(2)} MB) [${fileIndex + 1}/${files.length}] (${progress}%)`);
+        throttledLog('listingurl-download', `Starting download: ${file.fileName} (${(file.size / (1024 * 1024)).toFixed(2)} MB) [${fileIndex + 1}/${files.length}] (${progress}%)`);
 
         const fileResponse = await axios.get(file.url, {
           responseType: 'stream',
@@ -103,6 +104,8 @@ export const backupFromListingUrl = async () => {
     failedCount += results.filter(r => r.status === 'failed').length;
     allResults.push(...results);
   }
+
+  flushThrottledLogs();
 
   const totalDownloadTime = ((Date.now() - startDownloadTime) / 1000).toFixed(2);
   console.log(`\nDownload phase completed in ${totalDownloadTime}s:`);

@@ -4,6 +4,7 @@ import path from 'path';
 import { backupAlreadyExists, persistBackupFiles } from '../destination/destination';
 import { getAllFilesFromLocalDir } from '../utils/utils';
 import { getEnvironment } from '../utils/environment';
+import { throttledLog, flushThrottledLogs } from '../utils/logger';
 
 export const backupFromLocalDirectory = async () => {
   const sourceDir = getEnvironment().filesBackupPath;
@@ -27,12 +28,14 @@ export const backupFromLocalDirectory = async () => {
     const relativePath = path.relative(sourceDir, sourceFile).split(path.sep).join('/');
 
     if (await backupAlreadyExists('files-backup', relativePath)) {
-      console.log(`Skipped (already exists in backup): ${relativePath}`);
+      throttledLog('local-backup-skip', `Skipped (already exists in backup): ${relativePath}`);
       continue;
     }
 
     filesToPersist.push(sourceFile);
   }
+
+  flushThrottledLogs();
 
   await persistBackupFiles(
     'files-backup',

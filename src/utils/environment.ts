@@ -18,6 +18,7 @@ export interface EnvironmentConfig {
   filesBackupSupabasePrefix?: string;
   filesBackupUrl?: string;
   localBackupPath?: string;
+  minimizeLogs: boolean;
   pgDumpPath?: string;
   r2AccessKeyId?: string;
   r2AccountId?: string;
@@ -56,6 +57,7 @@ export const getEnvironment = (): EnvironmentConfig => {
     filesBackupSupabasePrefix: readOptional('FILES_BACKUP_SUPABASE_PREFIX'),
     filesBackupUrl: readOptional('FILES_BACKUP_URL'),
     localBackupPath: readOptional('LOCAL_BACKUP_PATH'),
+    minimizeLogs: readOptional('MINIMIZE_LOGS') === 'true',
     pgDumpPath: readOptional('PG_DUMP_PATH'),
     r2AccessKeyId: readOptional('R2_ACCESS_KEY_ID'),
     r2AccountId: readOptional('R2_ACCOUNT_ID'),
