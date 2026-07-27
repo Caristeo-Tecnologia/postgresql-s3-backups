@@ -6,7 +6,7 @@ interface PendingEntry {
   lastMessage: string;
 }
 
-const THROTTLE_DELAY_MS = 1000;
+const THROTTLE_DELAY_MS = 100;
 const pendingLogs = new Map<string, PendingEntry>();
 
 const emit = (key: string, entry: PendingEntry) => {

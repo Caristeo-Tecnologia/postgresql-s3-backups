@@ -2,23 +2,32 @@ import { S3Client, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/clien
 import fs from 'fs';
 import { getEnvironment } from './environment';
 
+// Reused across calls so uploads share one HTTP connection pool instead of
+// each opening/leaking its own sockets (was tripping Railway's ephemeral
+// port warning when backing up many files in a loop).
+let s3ClientInstance: S3Client | undefined;
+
 // Create S3 client based on storage provider (AWS S3 or Cloudflare R2)
 const createS3Client = () => {
+  if (s3ClientInstance) {
+    return s3ClientInstance;
+  }
+
   const environment = getEnvironment();
   const storageProvider = environment.destinationType;
 
   if (storageProvider === 'local') {
     throw new Error('BACKUP_DESTINATION_TYPE must be aws or r2 when using object storage');
   }
-  
+
   if (storageProvider === 'r2') {
     // Cloudflare R2 configuration
     const accountId = environment.r2AccountId;
     if (!accountId) {
       throw new Error('R2_ACCOUNT_ID is required when using Cloudflare R2');
     }
-    
-    return new S3Client({
+
+    s3ClientInstance = new S3Client({
       region: 'auto',
       endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
       credentials: {
@@ -28,7 +37,7 @@ const createS3Client = () => {
     });
   } else {
     // AWS S3 configuration (default)
-    return new S3Client({
+    s3ClientInstance = new S3Client({
       region: environment.awsS3Region,
       credentials: {
         accessKeyId: environment.awsAccessKeyId!,
@@ -36,6 +45,8 @@ const createS3Client = () => {
       },
     });
   }
+
+  return s3ClientInstance;
 };
 
 export const fileExistsInS3 = async (folderPrefix: string, filename: string): Promise<boolean> => {
