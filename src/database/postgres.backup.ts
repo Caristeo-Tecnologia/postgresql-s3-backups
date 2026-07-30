@@ -2,10 +2,131 @@ import { BackupResult, DatabaseConfig } from "../utils/types";
 import { promisify } from 'util';
 import { exec } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { getEnvironment } from '../utils/environment';
+import crypto from 'crypto';
+import { EnvironmentConfig, getEnvironment } from '../utils/environment';
+import { generateRandomPassword, READONLY_BACKUP_USERNAME } from '../utils/readonly-user';
 
 const execPromise = promisify(exec);
+
+// Runs a SQL script against the configured database via `psql`, mirroring the
+// pg_dump connection handling below (same binary folder, same Windows quirks).
+// The SQL is written to a temp file and run with `-f` so it never has to be
+// shell-escaped, however many statements or quotes it contains.
+const runPsql = async (config: DatabaseConfig, environment: EnvironmentConfig, sql: string): Promise<string> => {
+  const pgDumpPath = environment.pgDumpPath || '';
+  const isWindows = process.platform === 'win32';
+  const psqlExecutable = isWindows ? 'psql.exe' : 'psql';
+  const psqlFullPath = pgDumpPath ? path.join(pgDumpPath, psqlExecutable) : psqlExecutable;
+  const quotedPsql = pgDumpPath ? `"${psqlFullPath}"` : psqlExecutable;
+
+  const tempFile = path.join(os.tmpdir(), `pg-backup-check-${crypto.randomUUID()}.sql`);
+  fs.writeFileSync(tempFile, sql);
+
+  try {
+    let command: string;
+    let env = environment.processEnvironment;
+
+    if (isWindows) {
+      let pgPassword = '';
+      let pgHost = 'localhost';
+      let pgPort = '5432';
+      let pgUser = '';
+      let pgDatabase = '';
+
+      try {
+        const url = new URL(config.connectionString!);
+        pgPassword = url.password || '';
+        pgHost = url.hostname || 'localhost';
+        pgPort = url.port || '5432';
+        pgUser = url.username || '';
+        pgDatabase = url.pathname.substring(1);
+      } catch (error) {
+        throw new Error('Invalid PostgreSQL connection string format');
+      }
+
+      env = {
+        ...environment.processEnvironment,
+        PGPASSWORD: pgPassword,
+      };
+
+      const quotedTempFile = `"${tempFile}"`;
+      command = `cmd /c "${quotedPsql} -h ${pgHost} -p ${pgPort} -U ${pgUser} -d ${pgDatabase} -tA -f ${quotedTempFile}"`;
+    } else {
+      command = `${quotedPsql} --dbname="${config.connectionString}" -tA -f "${tempFile}"`;
+    }
+
+    const { stdout } = await execPromise(command, { env });
+    return stdout;
+  } finally {
+    fs.unlinkSync(tempFile);
+  }
+};
+
+// Creates (or, if it already exists, resets the password of) a read-only database
+// user, grants it SELECT access, prints the connection string to switch to, and
+// terminates the process. Called when the configured user turns out to be writable.
+const provisionReadOnlyUserAndExit = async (config: DatabaseConfig, environment: EnvironmentConfig): Promise<never> => {
+  const username = READONLY_BACKUP_USERNAME;
+  const password = generateRandomPassword();
+
+  try {
+    const url = new URL(config.connectionString!);
+    const dbName = url.pathname.substring(1);
+
+    const existsResult = await runPsql(config, environment, `SELECT 1 FROM pg_roles WHERE rolname = '${username}'`);
+    const userExists = existsResult.trim() !== '';
+
+    const upsertUserSql = userExists
+      ? `ALTER ROLE ${username} WITH PASSWORD '${password}';`
+      : `CREATE ROLE ${username} LOGIN PASSWORD '${password}';`;
+
+    await runPsql(config, environment, `
+      ${upsertUserSql}
+      GRANT CONNECT ON DATABASE ${dbName} TO ${username};
+      GRANT USAGE ON SCHEMA public TO ${username};
+      GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${username};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO ${username};
+    `);
+
+    url.username = username;
+    url.password = password;
+
+    console.error(`\n[${config.name}] The configured database user has write permissions. ${userExists ? 'Reset the password for' : 'Created'} the read-only user "${username}".`);
+    console.error(`Update this database's connectionString to:\n  ${url.toString()}\n`);
+  } catch (error) {
+    console.error(`\n[${config.name}] The configured database user has write permissions, and the read-only user "${username}" could not be created automatically: ${error}`);
+    console.error(`Create one manually, for example:\n  CREATE ROLE ${username} LOGIN PASSWORD '<password>';\n  GRANT CONNECT ON DATABASE <dbname> TO ${username};\n  GRANT USAGE ON SCHEMA public TO ${username};\n  GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${username};\n  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO ${username};\n`);
+  }
+
+  console.error(`Refusing to back up "${config.name}" with a writable user. Set ALLOW_WRITABLE_DATABASE_USER=true to bypass this check.`);
+  process.exit(1);
+};
+
+// Refuses to back up with a database user that can modify data (INSERT/UPDATE/DELETE),
+// since backups should run with a read-only user. Set ALLOW_WRITABLE_DATABASE_USER=true
+// to disable this check for setups where a read-only user isn't available.
+const assertReadOnlyDatabaseUser = async (config: DatabaseConfig, environment: EnvironmentConfig): Promise<void> => {
+  if (environment.allowWritableDatabaseUser) {
+    return;
+  }
+
+  // has_table_privilege() reflects effective privileges (ownership, role membership,
+  // and direct grants), unlike information_schema.role_table_grants which misses ownership.
+  const query = "SELECT bool_or(has_table_privilege(schemaname || '.' || tablename, 'INSERT') OR has_table_privilege(schemaname || '.' || tablename, 'UPDATE') OR has_table_privilege(schemaname || '.' || tablename, 'DELETE')) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')";
+
+  let stdout: string;
+  try {
+    stdout = await runPsql(config, environment, query);
+  } catch (error) {
+    throw new Error(`Could not verify database user permissions for "${config.name}": ${error}. Set ALLOW_WRITABLE_DATABASE_USER=true to skip this check.`);
+  }
+
+  if (stdout.trim() === 't') {
+    await provisionReadOnlyUserAndExit(config, environment);
+  }
+};
 
 // Run pg_dump to create a PostgreSQL backup
 export const createPostgreSQLBackup = async (config: DatabaseConfig): Promise<BackupResult> => {
@@ -27,8 +148,10 @@ export const createPostgreSQLBackup = async (config: DatabaseConfig): Promise<Ba
   console.log(`Creating PostgreSQL backup for database ${dbName}...`);
   
   try {
-    // Run pg_dump with compression
     const environment = getEnvironment();
+    await assertReadOnlyDatabaseUser(config, environment);
+
+    // Run pg_dump with compression
     const pgDumpPath = environment.pgDumpPath || '';
     const isWindows = process.platform === 'win32';
     const pgDumpExecutable = isWindows ? 'pg_dump.exe' : 'pg_dump';

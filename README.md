@@ -32,6 +32,45 @@ CRON_JOB_INTERVAL=0 2 * * *
 # avoid exceeding log volume limits on cloud logging providers.
 # Default: false
 MINIMIZE_LOGS=false
+
+# By default, database backups refuse to run if the configured user has write
+# permissions (INSERT/UPDATE/DELETE), since backups should run with a
+# read-only user. When that happens, a read-only user named
+# "backup_readonly_user" is automatically created (or, if it already exists,
+# given a new random password), its connection details are printed to the
+# log, and the process exits with an error so the misconfiguration can't be
+# missed. Set to true to skip this check and allow backing up with a
+# writable user instead.
+# Default: false
+ALLOW_WRITABLE_DATABASE_USER=false
+```
+
+### Read-Only Database User
+
+When a configured database user turns out to be writable, the app itself creates (or resets the password of) a
+`backup_readonly_user` with read-only access and logs the connection details to use instead, then exits — see
+`ALLOW_WRITABLE_DATABASE_USER` above. This requires the configured user to have permission to create roles/logins
+and grant privileges. If it doesn't, provisioning fails and the log falls back to printing the SQL below so you can
+create the user manually.
+
+**PostgreSQL:**
+
+```sql
+CREATE ROLE backup_readonly_user LOGIN PASSWORD 'change-me';
+GRANT CONNECT ON DATABASE dbname TO backup_readonly_user;
+GRANT USAGE ON SCHEMA public TO backup_readonly_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO backup_readonly_user;
+-- Ensures tables created after this point are also readable:
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO backup_readonly_user;
+```
+
+**MSSQL:**
+
+```sql
+CREATE LOGIN backup_readonly_user WITH PASSWORD = 'change-me';
+USE dbname;
+CREATE USER backup_readonly_user FOR LOGIN backup_readonly_user;
+ALTER ROLE db_datareader ADD MEMBER backup_readonly_user;
 ```
 
 ### Backup Storage Configuration
@@ -118,6 +157,8 @@ FILES_BACKUP_URL=https://example.com/files-backup.zip
 ```env
 # Path to pg_dump binary (include trailing slash)
 # Required for PostgreSQL backups
+# The same folder must also contain psql, used to check that the
+# database user doesn't have write permissions (see ALLOW_WRITABLE_DATABASE_USER above)
 
 # Linux/macOS:
 PG_DUMP_PATH=/usr/bin/

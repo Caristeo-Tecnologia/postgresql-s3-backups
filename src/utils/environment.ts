@@ -4,6 +4,7 @@ import { DestinationSourceType, FileBackupSourceType } from './types';
 dotenv.config();
 
 export interface EnvironmentConfig {
+  allowWritableDatabaseUser: boolean;
   awsAccessKeyId?: string;
   awsS3Bucket?: string;
   awsS3Region?: string;
@@ -43,6 +44,7 @@ export const getEnvironment = (): EnvironmentConfig => {
   const destinationType = (configuredBackupDestinationType || 'aws') as DestinationSourceType;
 
   return {
+    allowWritableDatabaseUser: readOptional('ALLOW_WRITABLE_DATABASE_USER') === 'true',
     awsAccessKeyId: readOptional('AWS_ACCESS_KEY_ID'),
     awsS3Bucket: readOptional('AWS_S3_BUCKET'),
     awsS3Region: readOptional('AWS_S3_REGION'),

@@ -4,8 +4,76 @@ import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import sql from 'mssql';
+import { getEnvironment } from '../utils/environment';
+import { generateRandomPassword, READONLY_BACKUP_USERNAME } from '../utils/readonly-user';
 
 const execPromise = promisify(exec);
+
+// Creates (or, if it already exists, resets the password of) a read-only database
+// user, grants it db_datareader access, prints the credentials to switch to, and
+// terminates the process. Called when the configured user turns out to be writable.
+const provisionReadOnlyUserAndExit = async (pool: sql.ConnectionPool, config: DatabaseConfig): Promise<never> => {
+  const username = READONLY_BACKUP_USERNAME;
+  const password = generateRandomPassword();
+
+  try {
+    const loginExistsResult = await pool.request().query(`SELECT 1 AS found FROM sys.sql_logins WHERE name = '${username}'`);
+    const loginExists = loginExistsResult.recordset.length > 0;
+
+    await pool.request().query(
+      loginExists
+        ? `ALTER LOGIN [${username}] WITH PASSWORD = '${password}'`
+        : `CREATE LOGIN [${username}] WITH PASSWORD = '${password}'`
+    );
+
+    const userExistsResult = await pool.request().query(`SELECT 1 AS found FROM sys.database_principals WHERE name = '${username}'`);
+    if (userExistsResult.recordset.length === 0) {
+      await pool.request().query(`CREATE USER [${username}] FOR LOGIN [${username}]`);
+    }
+
+    const roleMemberResult = await pool.request().query(`SELECT IS_ROLEMEMBER('db_datareader', '${username}') AS isMember`);
+    if (roleMemberResult.recordset[0]?.isMember !== 1) {
+      await pool.request().query(`ALTER ROLE db_datareader ADD MEMBER [${username}]`);
+    }
+
+    console.error(`\n[${config.name}] The configured database user has write permissions. ${loginExists ? 'Reset the password for' : 'Created'} the read-only user "${username}".`);
+    console.error(`Update this database's config to:\n  "user": "${username}",\n  "password": "${password}"\n`);
+  } catch (error) {
+    console.error(`\n[${config.name}] The configured database user has write permissions, and the read-only user "${username}" could not be created automatically: ${error}`);
+    console.error(`Create one manually, for example:\n  CREATE LOGIN [${username}] WITH PASSWORD = '<password>';\n  CREATE USER [${username}] FOR LOGIN [${username}];\n  ALTER ROLE db_datareader ADD MEMBER [${username}];\n`);
+  }
+
+  console.error(`Refusing to back up "${config.name}" with a writable user. Set ALLOW_WRITABLE_DATABASE_USER=true to bypass this check.`);
+
+  try {
+    await pool.close();
+  } catch (closeError) {
+    console.error('Failed to close MSSQL connection pool:', closeError);
+  }
+
+  process.exit(1);
+};
+
+// Refuses to back up with a database user that can modify data (INSERT/UPDATE/DELETE),
+// since backups should run with a read-only user. Set ALLOW_WRITABLE_DATABASE_USER=true
+// to disable this check for setups where a read-only user isn't available.
+const assertReadOnlyDatabaseUser = async (pool: sql.ConnectionPool, config: DatabaseConfig): Promise<void> => {
+  if (getEnvironment().allowWritableDatabaseUser) {
+    return;
+  }
+
+  // fn_my_permissions resolves effective permissions (role membership, ownership,
+  // and direct grants) on the default schema, rather than just direct grants.
+  const result = await pool.request().query(`
+    SELECT permission_name
+    FROM fn_my_permissions('dbo', 'SCHEMA')
+    WHERE permission_name IN ('INSERT', 'UPDATE', 'DELETE')
+  `);
+
+  if (result.recordset.length > 0) {
+    await provisionReadOnlyUserAndExit(pool, config);
+  }
+};
 
 // Create a MSSQL backup
 export const createMSSQLBackup = async (config: DatabaseConfig): Promise<BackupResult> => {
@@ -41,7 +109,9 @@ export const createMSSQLBackup = async (config: DatabaseConfig): Promise<BackupR
     };
 
     const pool = await sql.connect(sqlConfig);
-    
+
+    await assertReadOnlyDatabaseUser(pool, config);
+
     // Get all tables data and create a SQL dump
     const tables = await pool.request().query(`
       SELECT TABLE_NAME 
