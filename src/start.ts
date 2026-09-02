@@ -5,15 +5,31 @@ import { performFilesBackup } from './storage-backup/storage';
 import { getEnvironment } from './utils/environment';
 
 async function performBackups() {
-  await performFilesBackup();
-  
+  let hasError = false;
+
+  try {
+    await performFilesBackup();
+  } catch (error) {
+    console.error('Files backup failed:', error);
+    hasError = true;
+  }
+
   // Get database configurations
   const databaseConfigs = getValidatedDatabaseConfigs();
-  
+
   if (databaseConfigs.length > 0) {
-    await performDatabaseBackup(databaseConfigs);
+    try {
+      await performDatabaseBackup(databaseConfigs);
+    } catch (error) {
+      console.error('Database backup failed:', error);
+      hasError = true;
+    }
   } else {
     console.log('No valid database configurations found, skipping database backups');
+  }
+
+  if (hasError) {
+    process.exitCode = 1;
   }
 }
 

@@ -32,23 +32,30 @@ export const performDatabaseBackup = async (databases: DatabaseConfig[]) => {
       console.log('No databases configured for backup');
       return;
     }
-    
+
+    let hasError = false;
+
     for (const dbConfig of databases) {
       try {
         console.log(`\n--- Backing up ${dbConfig.name} (${dbConfig.type}) ---`);
         const result = await createDatabaseBackup(dbConfig);
-        
+
         await persistBackupFile('db-backup', result.filename, result.filePath, false);
 
         console.log(`Backup completed for ${dbConfig.name}`);
       } catch (error) {
         console.error(`Failed to backup database ${dbConfig.name}:`, error);
+        hasError = true;
         // Continue with next database instead of exiting
       }
     }
-    
+
     console.log('\nAll database backups completed');
-    
+
+    if (hasError) {
+      throw new Error('One or more database backups failed');
+    }
+
   } catch (error) {
     console.error('Backup process failed:', error);
     throw error;
