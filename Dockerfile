@@ -10,7 +10,7 @@ RUN rm -rf node_modules
 
 RUN npm install
 
-ARG PG_VERSION='17'
+ARG PG_VERSION='18'
 
 RUN echo 'http://dl-cdn.alpinelinux.org/alpine/edge/main' > /etc/apk/repositories
 
