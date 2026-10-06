@@ -14,7 +14,7 @@ const execPromise = promisify(exec);
 // pg_dump connection handling below (same binary folder, same Windows quirks).
 // The SQL is written to a temp file and run with `-f` so it never has to be
 // shell-escaped, however many statements or quotes it contains.
-const runPsql = async (config: DatabaseConfig, environment: EnvironmentConfig, sql: string): Promise<string> => {
+export const runPsql = async (config: DatabaseConfig, environment: EnvironmentConfig, sql: string): Promise<string> => {
   const pgDumpPath = environment.pgDumpPath || '';
   const isWindows = process.platform === 'win32';
   const psqlExecutable = isWindows ? 'psql.exe' : 'psql';
@@ -124,6 +124,13 @@ const assertReadOnlyDatabaseUser = async (config: DatabaseConfig, environment: E
   }
 
   if (stdout.trim() === 't') {
+    // Databases found through includeDatabasesLike share the base entry's user, whose
+    // access is expected to be granted where the databases are created. Provisioning a
+    // user here would reset its password and stop the run halfway through the list.
+    if (config.discovered) {
+      throw new Error(`The configured database user has write permissions on "${config.name}". Grant it read-only access to this database or set ALLOW_WRITABLE_DATABASE_USER=true to bypass this check.`);
+    }
+
     await provisionReadOnlyUserAndExit(config, environment);
   }
 };

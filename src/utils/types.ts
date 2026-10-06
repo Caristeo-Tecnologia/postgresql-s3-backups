@@ -8,6 +8,12 @@ export interface DatabaseConfig {
   type: DatabaseSourceType;
   name: string; // Friendly name for the database
   connectionString?: string; // For PostgreSQL
+  // For PostgreSQL: LIKE patterns of other databases on the same server to back up
+  // too (e.g. one database per tenant). Resolved on every run, so new databases are
+  // picked up automatically.
+  includeDatabasesLike?: string[];
+  // Internal: set on entries generated from includeDatabasesLike.
+  discovered?: boolean;
   host?: string; // For MSSQL
   port?: number; // For MSSQL
   database?: string; // For MSSQL

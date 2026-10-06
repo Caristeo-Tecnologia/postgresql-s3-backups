@@ -56,6 +56,19 @@ export const validateDatabaseConfig = (config: DatabaseConfig): boolean => {
       return false;
     }
   }
+
+  if (config.includeDatabasesLike !== undefined) {
+    if (config.type !== 'postgresql') {
+      console.error(`includeDatabasesLike is only supported for PostgreSQL`, config);
+      return false;
+    }
+
+    const patterns: unknown = config.includeDatabasesLike;
+    if (!Array.isArray(patterns) || patterns.some((pattern) => typeof pattern !== 'string' || pattern.trim() === '')) {
+      console.error(`includeDatabasesLike must be an array of non-empty strings`, config);
+      return false;
+    }
+  }
   
   if (config.type === 'mssql') {
     if (!config.host || !config.database || !config.user || !config.password) {

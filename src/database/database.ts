@@ -8,6 +8,7 @@ import cron from 'node-cron';
 import sql from 'mssql';
 import { DatabaseConfig, BackupResult } from '../utils/types';
 import { createPostgreSQLBackup } from './postgres.backup';
+import { expandPostgreSQLConfig } from './postgres.discovery';
 import { createMSSQLBackup } from './mysql.backup';
 import { persistBackupFile } from '../destination/destination';
 
@@ -34,8 +35,27 @@ export const performDatabaseBackup = async (databases: DatabaseConfig[]) => {
     }
 
     let hasError = false;
+    const expandedDatabases: DatabaseConfig[] = [];
 
     for (const dbConfig of databases) {
+      if (dbConfig.type !== 'postgresql' || !dbConfig.includeDatabasesLike?.length) {
+        expandedDatabases.push(dbConfig);
+        continue;
+      }
+
+      try {
+        const expanded = await expandPostgreSQLConfig(dbConfig);
+        console.log(`Found ${expanded.length - 1} additional database(s) for ${dbConfig.name} through includeDatabasesLike`);
+        expandedDatabases.push(...expanded);
+      } catch (error) {
+        console.error(`Failed to list databases for ${dbConfig.name} (includeDatabasesLike):`, error);
+        hasError = true;
+        // Still back up the database the entry points to
+        expandedDatabases.push(dbConfig);
+      }
+    }
+
+    for (const dbConfig of expandedDatabases) {
       try {
         console.log(`\n--- Backing up ${dbConfig.name} (${dbConfig.type}) ---`);
         const result = await createDatabaseBackup(dbConfig);

@@ -120,6 +120,37 @@ DATABASE_CONFIGS='[
 - `type`: Must be `"postgresql"`
 - `name`: Friendly name for the database (used in backup filename)
 - `connectionString`: Full PostgreSQL connection URL
+- `includeDatabasesLike` (optional): Array of SQL `LIKE` patterns matching other databases on the same server to back up
+  as well — see [Multiple Databases on the Same Server](#multiple-databases-on-the-same-server-multi-tenant)
+
+##### Multiple Databases on the Same Server (Multi-Tenant)
+
+For applications that keep one database per tenant, list patterns instead of each database:
+
+```env
+DATABASE_CONFIGS='[
+  {
+    "type": "postgresql",
+    "name": "app",
+    "connectionString": "postgresql://backup_readonly_user:password@localhost:5432/app_prd",
+    "includeDatabasesLike": ["app_prd_tenant_%", "app_prd_audit"]
+  }
+]'
+```
+
+On every run the server is queried for the databases matching any of the patterns, and each one is backed up to its own
+file (`backup-<database name>-<timestamp>.sql.gz`) in addition to the database in `connectionString`. Databases created
+later are picked up on the next run with no configuration change.
+
+- Patterns follow SQL `LIKE`: `%` matches any sequence of characters and `_` matches any single character.
+  To match a literal underscore, escape it with a backslash, doubled inside the JSON: `"app\\_%"` matches `app_1` but
+  not `app1` or `app1_shadow`, which the unescaped `"app_%"` would also match.
+- The same user and connection options are used for every database, so that user must **already** have read access to
+  each of them. This tool never grants access to discovered databases: grant it where the databases are created (for
+  example, in the application's tenant provisioning), including `SELECT` on sequences, which `pg_dump` reads.
+- If the user turns out to be writable on a discovered database, that backup fails with an error instead of triggering
+  the automatic read-only user provisioning described above.
+- A database the user can't read fails on its own; the remaining ones are still backed up and the run exits with an error.
 
 **MSSQL Configuration Fields:**
 - `type`: Must be `"mssql"`
