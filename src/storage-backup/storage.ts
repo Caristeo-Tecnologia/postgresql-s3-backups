@@ -26,6 +26,9 @@ export const performFilesBackup = async () => {
       return backupFromZipUrl();
     case 'supabase':
       return backupFromSupabaseBucket();
+    case 'none':
+      console.log('FILES_BACKUP_SOURCE is set to "none", files backup skipped.');
+      return;
     default:
       throw new Error(`Unsupported FILES_BACKUP_SOURCE: ${source}`);
   }

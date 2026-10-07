@@ -1,7 +1,7 @@
 
 export type FolderPrefix = 'files-backup' | 'db-backup';
 export type DatabaseSourceType = 'postgresql' | 'mssql';
-export type FileBackupSourceType = 'local' | 'supabase' | 'listingUrl' | 'zippedFile';
+export type FileBackupSourceType = 'local' | 'supabase' | 'listingUrl' | 'zippedFile' | 'none';
 export type DestinationSourceType = 'local' | 'aws' | 'r2'
 
 export interface DatabaseConfig {
